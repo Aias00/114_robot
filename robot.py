@@ -1,3 +1,5 @@
+from audioop import add
+import re
 import requests
 import json
 import time
@@ -8,6 +10,8 @@ from rich.live import Live
 import datetime
 from datetime import timedelta
 import dingding
+from configparser import ConfigParser
+import os
 
 headers = {
     'Content-Type': 'application/json',
@@ -15,6 +19,19 @@ headers = {
     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6)'
                   ' AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36'
 }
+
+
+def read_config():
+    conn = ConfigParser()
+    file_path = os.path.join(os.path.dirname(__file__), 'app.ini')
+    if not os.path.exists(file_path):
+        print("配置文件不存在")
+        return None
+    conn.read(file_path)
+    cookie = conn.get("app", "cookie")
+    address = conn.get("app", "address").split(",")
+    print(cookie)
+    return {"cookie": cookie, "address": address}
 
 
 def parsing_url(url: str):
@@ -39,11 +56,13 @@ def parsing_url(url: str):
         first_dept_code = url_split[5]
         second_dept_code = url_split[6]
 
-        week_os_info = request_week_os_info(first_dept_code, second_dept_code, hos_code)
+        week_os_info = request_week_os_info(
+            first_dept_code, second_dept_code, hos_code)
         if week_os_info is not None:
             md.update(week_os_info)
 
-        os_base_properties = request_os_properties(first_dept_code, second_dept_code, hos_code)
+        os_base_properties = request_os_properties(
+            first_dept_code, second_dept_code, hos_code)
         if os_base_properties is not None:
             md.update(os_base_properties)
 
@@ -68,7 +87,8 @@ def request_week_os_info(first_dept_code: str, second_dept_code: str, hos_code: 
     }
 
     request_url = "https://www.114yygh.com/web/product/list"
-    response_data = requests.post(request_url, headers=headers, data=json.dumps(body))
+    response_data = requests.post(
+        request_url, headers=headers, data=json.dumps(body))
 
     response = None
     if response_data is not None:
@@ -92,7 +112,8 @@ def request_os_properties(first_dept_code: str, second_dept_code: str, hos_code:
 
     format_url = "https://www.114yygh.com/web/department/hos/detail?firstDeptCode={}&secondDeptCode={}&hosCode={}"
 
-    request_url = format_url.format(first_dept_code, second_dept_code, hos_code)
+    request_url = format_url.format(
+        first_dept_code, second_dept_code, hos_code)
     response_data = requests.get(request_url, headers=headers)
 
     response = None
@@ -119,6 +140,7 @@ def parsing_url_with_list(urls: list) -> list:
     os_parsed_list = []
     for curl in urls:
         data = parsing_url(curl)
+        data["url"] = curl
         if data is not None:
             os_parsed_list.append(data)
 
@@ -135,7 +157,8 @@ def all_info_of_table(request_os_list: list) -> Table:
         next_day = now + timedelta(days=value)
         week_of_name.append(next_day.strftime("%Y-%m-%d"))
 
-    table = Table(box=box.ROUNDED, title="[aquamarine3]114 网上预约实时监控({})".format(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))))
+    table = Table(box=box.ROUNDED, title="[aquamarine3]114 网上预约实时监控({})".format(
+        time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))))
 
     table.add_column('[light_sea_green]医院', justify="center")
     table.add_column('[light_sea_green]科部', justify="center")
@@ -179,6 +202,7 @@ def all_info_of_table(request_os_list: list) -> Table:
                     break
 
         hospital_dict["yuyue"] = yuyue_available
+        hospital_dict["url"] = data["url"]
         available.append(hospital_dict)
         table.add_row(data["hosName"], data["firstDeptName"], data["secondDeptName"],
                       week_of_dict[0], week_of_dict[1],
@@ -192,21 +216,24 @@ def all_info_of_table(request_os_list: list) -> Table:
 
 if __name__ == '__main__':
     console = Console(color_system='256', style=None)
-
-    cookie = console.input(":surfer:[bold deep_sky_blue3] 请输入114北京市预约挂号统一平台授权凭证Cookie：\n")
-    headers["Cookie"] = cookie
+    config = read_config()
+    # cookie = console.input(":surfer:[bold deep_sky_blue3] 请输入114北京市预约挂号统一平台授权凭证Cookie：\n")
+    headers["Cookie"] = config["cookie"]
 
     os_list = []
+    for url in config["address"]:
+        os_list.append(url)
+    print(os_list)
+    # url = console.input(":robot:[bold sky_blue2] 请键入要实时查询的门诊地址：\n")
+    # os_list.append(url)
 
-    url = console.input(":robot:[bold sky_blue2] 请键入要实时查询的门诊地址：\n")
-    os_list.append(url)
-
-    while True:
-        access_or_url = console.input(":heavy_exclamation_mark:[bold red1] 键入[Y]进行查询，否则继续批量录入门诊URL：\n")
-        if access_or_url == "Y":
-            break
-        else:
-            os_list.append(access_or_url)
+    # while True:
+        # access_or_url = console.input(
+            # ":heavy_exclamation_mark:[bold red1] 键入[Y]进行查询，否则继续批量录入门诊URL：\n")
+        # if access_or_url == "Y":
+            # break
+        # else:
+            # os_list.append(access_or_url)
 
     os_data = None
     with console.status("[light_goldenrod3]正在首次加载数据...[/]", spinner="moon"):
@@ -217,7 +244,7 @@ if __name__ == '__main__':
     with Live(console=console, screen=True, auto_refresh=False) as live:
         while True:
             if normal:
-                time.sleep(30)
+                time.sleep(60)
                 os_data = all_info_of_table(os_list)
 
             live.update(os_data, refresh=True)
